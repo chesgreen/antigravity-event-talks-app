@@ -161,18 +161,37 @@ async function fetchReleases(force = false) {
         
         applyFilters();
         
-        // Scroll to deep-link hash element if present
+        // Scroll to deep-link hash element if present (and reset filters if target is hidden)
         const hash = window.location.hash;
         if (hash) {
             const targetId = hash.substring(1);
-            setTimeout(() => {
-                const element = document.getElementById(targetId);
-                if (element) {
-                    toggleRowSelection(targetId);
-                    element.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                    showToast('Navigated to shared update note.', 'success');
+            const targetUpdate = allUpdates.find(u => u.id === targetId);
+            if (targetUpdate) {
+                const isVisible = visibleUpdates.some(u => u.id === targetId);
+                if (!isVisible) {
+                    if (searchInput) {
+                        searchInput.value = '';
+                        searchQuery = '';
+                    }
+                    if (clearSearchBtn) {
+                        clearSearchBtn.style.display = 'none';
+                    }
+                    document.querySelectorAll('.chip').forEach(c => c.classList.remove('active'));
+                    const allChip = document.querySelector('.chip[data-type="all"]');
+                    if (allChip) allChip.classList.add('active');
+                    activeFilter = 'all';
+                    applyFilters();
                 }
-            }, 500);
+                
+                setTimeout(() => {
+                    const element = document.getElementById(targetId);
+                    if (element) {
+                        toggleRowSelection(targetId);
+                        element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                        showToast('Navigated to shared update note.', 'success');
+                    }
+                }, 500);
+            }
         }
     } catch (err) {
         console.error(err);
