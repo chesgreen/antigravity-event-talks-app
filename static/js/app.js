@@ -1,10 +1,13 @@
 // Application State
 let allUpdates = [];
+let visibleUpdates = [];
 let activeFilter = 'all';
 let searchQuery = '';
 let selectedUpdateId = null;
 
 // DOM Elements
+const themeToggleBtn = document.getElementById('theme-toggle-btn');
+const exportCsvBtn = document.getElementById('export-csv-btn');
 const searchInput = document.getElementById('search-input');
 const clearSearchBtn = document.getElementById('clear-search');
 const filterChips = document.getElementById('filter-chips');
@@ -191,6 +194,15 @@ function applyFilters() {
         return matchesType && matchesQuery;
     });
     
+    visibleUpdates = filtered;
+    if (exportCsvBtn) {
+        if (visibleUpdates.length > 0) {
+            exportCsvBtn.style.display = 'inline-flex';
+        } else {
+            exportCsvBtn.style.display = 'none';
+        }
+    }
+    
     renderTimeline(filtered);
     updateCounts();
 }
@@ -295,6 +307,12 @@ function renderTimeline(filteredUpdates) {
                     </div>
                     <div class="update-content">${upd.htmlContent}</div>
                     <div class="update-actions">
+                        <button class="btn-copy" aria-label="Copy update text to clipboard">
+                            <svg viewBox="0 0 24 24" width="14" height="14" class="icon-copy">
+                                <path fill="currentColor" d="M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z"/>
+                            </svg>
+                            <span>Copy</span>
+                        </button>
                         <button class="btn-tweet" aria-label="Tweet this specific update">
                             <svg viewBox="0 0 24 24" width="14" height="14">
                                 <path fill="currentColor" d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/>
@@ -309,6 +327,14 @@ function renderTimeline(filteredUpdates) {
             updateItem.addEventListener('click', (e) => {
                 // Ignore clicks on anchors and elements inside anchors to allow hyperlink navigation
                 if (e.target.tagName === 'A' || e.target.closest('a')) {
+                    return;
+                }
+                
+                // If they click the Copy button, copy the text to clipboard
+                const copyBtn = e.target.closest('.btn-copy');
+                if (copyBtn) {
+                    e.stopPropagation();
+                    copyUpdateToClipboard(upd, copyBtn);
                     return;
                 }
                 
@@ -421,12 +447,33 @@ function closeComposer() {
 
 // Event Listeners
 document.addEventListener('DOMContentLoaded', () => {
+    // Initialize Theme Switcher
+    const savedTheme = localStorage.getItem('theme');
+    if (savedTheme === 'light') {
+        document.body.classList.add('light-theme');
+        updateThemeToggleIcon();
+    }
+    
+    if (themeToggleBtn) {
+        themeToggleBtn.addEventListener('click', () => {
+            document.body.classList.toggle('light-theme');
+            const isLight = document.body.classList.contains('light-theme');
+            localStorage.setItem('theme', isLight ? 'light' : 'dark');
+            updateThemeToggleIcon();
+        });
+    }
+
     // Initial fetch
     fetchReleases();
     
     // Refresh buttons
     refreshBtn.addEventListener('click', () => fetchReleases(true));
     retryBtn.addEventListener('click', () => fetchReleases(true));
+    
+    // Export CSV button
+    if (exportCsvBtn) {
+        exportCsvBtn.addEventListener('click', () => exportToCSV(visibleUpdates));
+    }
     
     // Search input handlers
     let searchDebounce;
@@ -503,3 +550,83 @@ document.addEventListener('DOMContentLoaded', () => {
         closeComposer();
     });
 });
+
+// Helper: Copy individual update to clipboard
+function copyUpdateToClipboard(upd, btn) {
+    const textToCopy = `[BigQuery Release Note - ${upd.date}]\nType: ${upd.type}\n\n${upd.textContent}\n\nRead details: ${upd.link}`;
+    
+    navigator.clipboard.writeText(textToCopy).then(() => {
+        const origContent = btn.innerHTML;
+        btn.classList.add('copied');
+        btn.innerHTML = `
+            <svg viewBox="0 0 24 24" width="14" height="14">
+                <path fill="none" stroke="currentColor" stroke-width="3.5" d="M5 12l5 5L20 7"/>
+            </svg>
+            <span>Copied!</span>
+        `;
+        
+        setTimeout(() => {
+            btn.classList.remove('copied');
+            btn.innerHTML = origContent;
+        }, 1500);
+    }).catch(err => {
+        console.error('Could not copy update text to clipboard: ', err);
+        alert('Failed to copy. Please copy manually.');
+    });
+}
+
+// Helper: Export currently visible updates to CSV
+function exportToCSV(updates) {
+    if (!updates || updates.length === 0) {
+        alert('No updates to export.');
+        return;
+    }
+    
+    const headers = ['Date', 'Type', 'Description', 'Link'];
+    const rows = updates.map(upd => [
+        upd.date,
+        upd.type,
+        upd.textContent.replace(/"/g, '""'), // Escape double-quotes for CSV compliance
+        upd.link
+    ]);
+    
+    // Construct CSV String
+    const csvContent = [
+        headers.join(','),
+        ...rows.map(r => r.map(val => `"${val}"`).join(','))
+    ].join('\n');
+    
+    // Trigger download
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.setAttribute('href', url);
+    link.setAttribute('download', `bigquery_release_notes_${new Date().toISOString().slice(0, 10)}.csv`);
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+}
+
+// Helper: Update theme icon on switcher button
+function updateThemeToggleIcon() {
+    if (!themeToggleBtn) return;
+    const isLight = document.body.classList.contains('light-theme');
+    if (isLight) {
+        // Show Moon Icon (for switching to dark mode)
+        themeToggleBtn.innerHTML = `
+            <svg class="icon-moon" viewBox="0 0 24 24" width="18" height="18">
+                <path fill="currentColor" d="M12.3,2a10,10,0,0,0-1.9.2,1,1,0,0,0-.7,1.2,1,1,0,0,0,1.2.7A8,8,0,0,1,12,18a8,8,0,0,1-7-4.1,1,1,0,0,0-1.2-.5,1,1,0,0,0-.7,1.2,10,10,0,0,0,19.2,1.7,1,1,0,0,0-.6-1.2,1,1,0,0,0-1.2.6A8,8,0,0,1,12.3,2Z"/>
+            </svg>
+        `;
+        themeToggleBtn.setAttribute('title', 'Switch to Dark Theme');
+    } else {
+        // Show Sun Icon (for switching to light mode)
+        themeToggleBtn.innerHTML = `
+            <svg class="icon-sun" viewBox="0 0 24 24" width="18" height="18">
+                <path fill="currentColor" d="M12,7a5,5,0,1,0,5,5A5,5,0,0,0,12,7Zm0,8a3,3,0,1,1,3-3A3,3,0,0,1,12,15Zm0-11a1,1,0,0,0,1-1V2a1,1,0,0,0-2,0V3A1,1,0,0,0,12,4Zm0,16a1,1,0,0,0-1,1v1a1,1,0,0,0,2,0V21A1,1,0,0,0,12,20ZM20,11H19a1,1,0,0,0,0,2h1a1,1,0,0,0,0-2ZM5,11H4a1,1,0,0,0,0,2H5a1,1,0,0,0,0-2Zm13.22-4.8a1,1,0,0,0,1.41-1.41l-.71-.71a1,1,0,1,0-1.41,1.41ZM6.5,16.09a1,1,0,0,0-1.41,1.41l.71.71a1,1,0,0,0,1.41-1.41ZM18.22,16.09a1,1,0,0,0-1.41,1.41l.71.71a1,1,0,0,0,1.41-1.41ZM6.5,5.69a1,1,0,0,0,1.41-1.41l-.71-.71A1,1,0,0,0,5.79,5l.71.71Z"/>
+            </svg>
+        `;
+        themeToggleBtn.setAttribute('title', 'Switch to Light Theme');
+    }
+}
