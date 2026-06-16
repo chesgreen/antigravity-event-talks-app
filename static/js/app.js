@@ -145,23 +145,42 @@ async function fetchReleases(force = false) {
             feedStatus.textContent = `Cached at ${timeStr}`;
         } else {
             feedStatus.textContent = `Refreshed at ${timeStr}`;
+            if (force) {
+                showToast('Release notes updated successfully.', 'success');
+            }
         }
         
         // Show cache warnings if server had to fallback
         if (result.warning) {
             feedStatus.textContent = `⚠️ Feed offline. Cached at ${timeStr}`;
+            showToast(result.warning, 'warning');
         }
         
         // Reset selection
         selectedUpdateId = null;
         
         applyFilters();
+        
+        // Scroll to deep-link hash element if present
+        const hash = window.location.hash;
+        if (hash) {
+            const targetId = hash.substring(1);
+            setTimeout(() => {
+                const element = document.getElementById(targetId);
+                if (element) {
+                    toggleRowSelection(targetId);
+                    element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    showToast('Navigated to shared update note.', 'success');
+                }
+            }, 500);
+        }
     } catch (err) {
         console.error(err);
         errorMessage.textContent = err.message || 'An error occurred while connecting to the backend feed reader.';
         errorState.style.display = 'flex';
         loadingState.style.display = 'none';
         feedStatus.textContent = 'Connection failed';
+        showToast('Failed to fetch release notes.', 'error');
     } finally {
         refreshBtn.classList.remove('loading');
     }
@@ -313,6 +332,12 @@ function renderTimeline(filteredUpdates) {
                             </svg>
                             <span>Copy</span>
                         </button>
+                        <button class="btn-share-link" aria-label="Copy deep link to this update">
+                            <svg viewBox="0 0 24 24" width="14" height="14">
+                                <path fill="currentColor" d="M3.9 12c0-1.71 1.39-3.1 3.1-3.1h4V7H7c-2.76 0-5 2.24-5 5s2.24 5 5 5h4v-1.9H7c-1.71 0-3.1-1.39-3.1-3.1zM8 13h8v-2H8v2zm9-6h-4v1.9h4c1.71 0 3.1 1.39 3.1 3.1s-1.39 3.1-3.1 3.1h-4V17h4c2.76 0 5-2.24 5-5s-2.24-5-5-5z"/>
+                            </svg>
+                            <span>Link</span>
+                        </button>
                         <button class="btn-tweet" aria-label="Tweet this specific update">
                             <svg viewBox="0 0 24 24" width="14" height="14">
                                 <path fill="currentColor" d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/>
@@ -335,6 +360,14 @@ function renderTimeline(filteredUpdates) {
                 if (copyBtn) {
                     e.stopPropagation();
                     copyUpdateToClipboard(upd, copyBtn);
+                    return;
+                }
+                
+                // If they click the Share Link button, copy deep link to clipboard
+                const shareLinkBtn = e.target.closest('.btn-share-link');
+                if (shareLinkBtn) {
+                    e.stopPropagation();
+                    copyDeepLink(upd, shareLinkBtn);
                     return;
                 }
                 
@@ -364,6 +397,14 @@ function renderTimeline(filteredUpdates) {
         dayCard.appendChild(listDiv);
         feedContainer.appendChild(dayCard);
     });
+    
+    // Apply keyword search highlighting if query is active
+    const q = searchQuery.trim();
+    if (q.length > 0) {
+        document.querySelectorAll('.update-content').forEach(element => {
+            highlightSearchTerm(element, q);
+        });
+    }
 }
 
 // Select/highlight rows
@@ -420,8 +461,6 @@ function updateCharCounter() {
     const len = text.length;
     const limit = 280;
     
-    charCount.textContent = `${len} / ${limit}`;
-    
     // Circle progress calculation (circumference is 100)
     const pct = Math.min((len / limit) * 100, 100);
     charProgressBar.setAttribute('stroke-dasharray', `${pct}, 100`);
@@ -432,11 +471,15 @@ function updateCharCounter() {
     postTweetBtn.disabled = false;
     
     if (len > limit) {
+        charCount.textContent = `-${len - limit} characters over`;
         charProgressBar.classList.add('danger');
         charCount.classList.add('danger');
         postTweetBtn.disabled = true;
-    } else if (len > limit - 20) {
-        charProgressBar.classList.add('warning');
+    } else {
+        charCount.textContent = `${len} / ${limit}`;
+        if (len > limit - 20) {
+            charProgressBar.classList.add('warning');
+        }
     }
 }
 
@@ -525,6 +568,16 @@ document.addEventListener('DOMContentLoaded', () => {
     // Tweet Composer key listener & buttons
     tweetTextarea.addEventListener('input', updateCharCounter);
     
+    // Add Ctrl+Enter shortcut to send tweet
+    tweetTextarea.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+            if (!postTweetBtn.disabled) {
+                e.preventDefault();
+                postTweetBtn.click();
+            }
+        }
+    });
+    
     closeModalBtn.addEventListener('click', closeComposer);
     
     // Close modal when clicking outside card area
@@ -564,6 +617,7 @@ function copyUpdateToClipboard(upd, btn) {
             </svg>
             <span>Copied!</span>
         `;
+        showToast('Update details copied to clipboard.', 'success');
         
         setTimeout(() => {
             btn.classList.remove('copied');
@@ -571,14 +625,42 @@ function copyUpdateToClipboard(upd, btn) {
         }, 1500);
     }).catch(err => {
         console.error('Could not copy update text to clipboard: ', err);
-        alert('Failed to copy. Please copy manually.');
+        showToast('Failed to copy. Please copy manually.', 'error');
+    });
+}
+
+// Helper: Copy deep link to clipboard
+function copyDeepLink(upd, btn) {
+    const deepLink = `${window.location.origin}${window.location.pathname}#${upd.id}`;
+    
+    navigator.clipboard.writeText(deepLink).then(() => {
+        const origContent = btn.innerHTML;
+        btn.classList.add('copied');
+        btn.innerHTML = `
+            <svg viewBox="0 0 24 24" width="14" height="14">
+                <path fill="none" stroke="currentColor" stroke-width="3.5" d="M5 12l5 5L20 7"/>
+            </svg>
+            <span>Copied!</span>
+        `;
+        showToast('Deep link copied to clipboard.', 'success');
+        
+        // Update URL hash without reload
+        history.replaceState(null, null, `#${upd.id}`);
+        
+        setTimeout(() => {
+            btn.classList.remove('copied');
+            btn.innerHTML = origContent;
+        }, 1500);
+    }).catch(err => {
+        console.error('Could not copy deep link to clipboard: ', err);
+        showToast('Failed to copy link.', 'error');
     });
 }
 
 // Helper: Export currently visible updates to CSV
 function exportToCSV(updates) {
     if (!updates || updates.length === 0) {
-        alert('No updates to export.');
+        showToast('No updates to export.', 'warning');
         return;
     }
     
@@ -597,15 +679,21 @@ function exportToCSV(updates) {
     ].join('\n');
     
     // Trigger download
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.setAttribute('href', url);
-    link.setAttribute('download', `bigquery_release_notes_${new Date().toISOString().slice(0, 10)}.csv`);
-    link.style.visibility = 'hidden';
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+    try {
+        const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.setAttribute('href', url);
+        link.setAttribute('download', `bigquery_release_notes_${new Date().toISOString().slice(0, 10)}.csv`);
+        link.style.visibility = 'hidden';
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        showToast(`Exported ${updates.length} release notes to CSV.`, 'success');
+    } catch (err) {
+        console.error(err);
+        showToast('Failed to export CSV.', 'error');
+    }
 }
 
 // Helper: Update theme icon on switcher button
@@ -629,4 +717,61 @@ function updateThemeToggleIcon() {
         `;
         themeToggleBtn.setAttribute('title', 'Switch to Light Theme');
     }
+}
+
+// Helper: Show floating toast notifications
+function showToast(message, type = 'info') {
+    const container = document.getElementById('toast-container');
+    if (!container) return;
+    
+    const toast = document.createElement('div');
+    toast.className = `toast ${type}`;
+    toast.textContent = message;
+    
+    container.appendChild(toast);
+    
+    // Trigger reflow to animate
+    toast.offsetHeight;
+    toast.classList.add('show');
+    
+    // Automatically remove after 3.5 seconds
+    setTimeout(() => {
+        toast.classList.remove('show');
+        toast.addEventListener('transitionend', () => {
+            toast.remove();
+        });
+    }, 3500);
+}
+
+// Helper: Highlight matching query keywords in text nodes
+function highlightSearchTerm(element, query) {
+    if (!query) return;
+    const regex = new RegExp(`(${escapeRegExp(query)})`, 'gi');
+    
+    const walk = document.createTreeWalker(element, NodeFilter.SHOW_TEXT, null, false);
+    let node;
+    const nodesToReplace = [];
+    while (node = walk.nextNode()) {
+        const parent = node.parentNode;
+        if (parent.tagName !== 'SCRIPT' && parent.tagName !== 'STYLE' && parent.tagName !== 'MARK' && node.nodeValue.match(regex)) {
+            nodesToReplace.push(node);
+        }
+    }
+    
+    nodesToReplace.forEach(node => {
+        const parent = node.parentNode;
+        const text = node.nodeValue;
+        const temp = document.createElement('span');
+        temp.innerHTML = text.replace(regex, '<mark class="highlight">$1</mark>');
+        
+        while (temp.firstChild) {
+            parent.insertBefore(temp.firstChild, node);
+        }
+        parent.removeChild(node);
+    });
+}
+
+// Helper: Escape Regex special characters
+function escapeRegExp(string) {
+    return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }

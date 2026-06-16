@@ -976,3 +976,87 @@ body {
         height: auto;
     }
 }
+
+/* ==========================================
+   Utility Improvements (Toasts, Highlights, Share Links)
+   ========================================== */
+
+/* Floating Toast Notifications */
+.toast-container {
+    position: fixed;
+    bottom: 24px;
+    right: 24px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    z-index: 2000;
+    pointer-events: none;
+}
+.toast {
+    background: var(--bg-card);
+    border: 1px solid var(--border-color);
+    color: var(--text-primary);
+    padding: 14px 20px;
+    border-radius: var(--radius-md);
+    box-shadow: var(--shadow-lg);
+    font-size: 0.9rem;
+    font-weight: 500;
+    pointer-events: auto;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-width: 280px;
+    max-width: 400px;
+    transform: translateX(120%);
+    opacity: 0;
+    transition: transform 0.35s cubic-bezier(0.34, 1.56, 0.64, 1), opacity 0.35s ease;
+    border-left: 4px solid var(--color-general);
+    box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.3);
+}
+.toast.show {
+    transform: translateX(0);
+    opacity: 1;
+}
+.toast.success {
+    border-left-color: var(--color-feature);
+}
+.toast.warning {
+    border-left-color: var(--color-issue);
+}
+.toast.error {
+    border-left-color: var(--color-deprecation);
+}
+
+/* Keyword Search Highlighting */
+mark.highlight {
+    background-color: rgba(59, 130, 246, 0.28);
+    color: inherit;
+    border-radius: 2px;
+    padding: 0 2px;
+}
+body.light-theme mark.highlight {
+    background-color: rgba(59, 130, 246, 0.22);
+}
+
+/* Deep Link Button */
+.btn-share-link {
+    background-color: transparent;
+    border: 1px solid var(--border-color);
+    color: var(--text-secondary);
+    padding: 6px 12px;
+    font-size: 0.8rem;
+    border-radius: var(--radius-sm);
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    cursor: pointer;
+    font-family: var(--font-sans);
+    font-weight: 600;
+    transition: var(--transition-fast);
+}
+.btn-share-link:hover {
+    background-color: rgba(139, 92, 246, 0.08);
+    border-color: rgba(139, 92, 246, 0.3);
+    color: var(--color-change);
+}
+
